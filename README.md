@@ -88,11 +88,11 @@ Then: type a website → **Add** → set the interval → **Start Monitoring** (
 
 **Monitoring several sites — healthy sites in green with their latency and uptime, a failed site in red, and every check recorded in the activity log:**
 
-![Monitoring view](screenshot1.png)
+![Monitoring view](screenshot1-1.png)
 
 **An alert is raised the moment a site goes down, with the reason shown and logged:**
 
-![Down alert](screenshot2.png)
+![Down alert](screenshot2-2.png)
 
 > Note the evidence of concurrency in these screenshots: every site in a round is logged at the *same second*, and the status bar reports the whole round finishing in **1.4 s** even though the slowest single site took **1369 ms**. The round takes about as long as the slowest site, not the sum of them all.
 
