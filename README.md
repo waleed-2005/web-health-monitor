@@ -2,8 +2,6 @@
 
 A Python desktop application that scans a folder for duplicate files using **file reading + hashing**, groups them, and lets you filter with **regular expressions** — built with a **PyQt5** GUI.
 
-- **Intern:** Waleed Ahmad Khan
-- **Reg No:** Mtech-PY26017
 - **Concepts:** File Handling + Regex
 - **GUI Toolkit:** PyQt5
 - **Level:** Advanced
