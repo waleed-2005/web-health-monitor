@@ -1,8 +1,8 @@
-# Duplicate File Finder
+# Web Health Monitor
 
-A Python desktop application that scans a folder for duplicate files using **file reading + hashing**, groups them, and lets you filter with **regular expressions** — built with a **PyQt5** GUI.
+A Python desktop application that monitors multiple websites **concurrently using threads**, records uptime and latency through the **logging** module, and raises an alert the moment a site goes down — built with a **PyQt5** GUI.
 
-- **Concepts:** File Handling + Regex
+- **Concepts:** Threading + Logging
 - **GUI Toolkit:** PyQt5
 - **Level:** Advanced
 
@@ -10,49 +10,55 @@ A Python desktop application that scans a folder for duplicate files using **fil
 
 ## What it does
 
-Over time a computer collects the same file many times over — photos copied from a phone twice, `report_final.pdf` saved again as `report_final(1).pdf`, repeated downloads, duplicated backup folders. These copies waste disk space and clutter your folders.
+Websites go down without warning. A shop's checkout page stops responding, an API starts timing out, a company site slows to a crawl — and the owner usually finds out only when a customer complains.
 
-This app scans a folder (and its sub-folders), finds files whose **contents** are byte-for-byte identical, groups them together, and reports exactly how much space is wasted. You can then delete the extra copies while always keeping one original.
+This app watches a list of URLs continuously. Every few seconds it checks each one, records whether it responded and how long it took, keeps a running uptime percentage, and pops up an alert the instant a site goes down. Every check is written to a log file so the history can be reviewed later.
 
-## How duplicates are detected
+Each site is shown as **UP** (green), **SLOW** (amber, slower than 1.5 s) or **DOWN** (red).
 
-Comparing every file against every other file would be far too slow, so the scan runs in **two passes**:
+## Threading
 
-**Pass 1 — group by size.** Two files of different sizes can never be identical, so any file with a unique size is discarded immediately. This is very fast because sizes come from the file system without opening the files.
+Checking sites one after another would be slow: five sites taking two seconds each means a ten-second round, with the window frozen the whole time. Two levels of threading fix this:
 
-**Pass 2 — group by hash.** Only files sharing a size are actually read. Each is read in **64 KB chunks** (never all at once, so a huge file can't exhaust memory) and fed into a **SHA-256** hash. Files producing the same hash have identical contents.
+1. **A background worker thread** runs the monitoring loop, so the GUI never freezes and stays clickable while checks are in progress.
+2. **A thread pool** checks every URL *at the same time*, so a round takes about as long as the single slowest site rather than the sum of them all.
 
-This means two files that happen to be the same size but hold different data are correctly **not** reported as duplicates.
+This is I/O-bound work (waiting on the network), which is exactly where Python threads help despite the GIL. Measured on five deliberately slow endpoints (~1 s each):
 
-## Regular expressions
+| Method | Time |
+|---|---|
+| Sequential | 5.15 s |
+| Concurrent (thread pool) | 1.15 s |
+| **Speed-up** | **4.5×** |
 
-Two optional regex filters control which files are scanned:
+## Logging
 
-- **Include** — only file names matching this pattern are considered
-- **Exclude** — file names matching this pattern are skipped
+The `logging` module is used instead of `print()`. Every check is recorded with a timestamp and a severity level:
 
-Examples:
+- `INFO` — the site responded normally
+- `WARNING` — the site responded but slowly
+- `ERROR` — the site is **DOWN** (bad status code, timeout or connection error)
 
-| Goal | Pattern | Field |
-|---|---|---|
-| Only images | `\.(jpg|png|gif)$` | Include |
-| Only documents | `\.(pdf|docx?)$` | Include |
-| Skip temp Office files | `^~\$` | Exclude |
-| Skip anything with "backup" | `backup` | Exclude |
+Logs are written to `web_health_monitor.log` **and** shown live in a panel inside the window. Sample output:
 
-Invalid patterns are caught and reported before the scan starts.
+```
+2026-07-20 11:49:28 | INFO    | UP    | https://example.com | HTTP 200 | 103 ms
+2026-07-20 11:49:28 | ERROR   | DOWN  | https://broken.site | HTTP 500 | 101 ms
+2026-07-20 11:49:28 | WARNING | SLOW  | https://slow.site   | HTTP 200 | 2097 ms
+```
 
 ## Features
 
-- Browse for any folder, with an optional "include sub-folders" toggle
-- Two regex filters (include / exclude), validated before scanning
-- Two-pass size-then-hash detection for speed
-- Chunked reading so very large files never exhaust memory
-- **Runs on a background thread** — the window stays responsive, with a live progress bar and a Stop button
-- Results shown in a grouped tree with per-group reclaimable space
-- Total wasted space reported in readable units (KB / MB / GB)
-- Safe deletion: the first file in each group is left unticked, so you can never delete every copy; a confirmation dialog appears before anything is removed
-- Handles unreadable files, permission errors and invalid regex without crashing
+- Add and remove URLs to monitor (bare domains like `example.com` are auto-completed to `https://`)
+- Adjustable check interval (5 s to 1 hour)
+- **Check Once Now** for a single immediate round, or **Start Monitoring** for continuous checks
+- Live table showing status, HTTP code, latency, uptime percentage and last-checked time
+- Colour-coded rows: green UP, amber SLOW, red DOWN
+- Running uptime percentage per site (e.g. `75% (3/4)`)
+- Pop-up alert the moment a site changes from up to down (not repeated every round)
+- Live activity log inside the window, plus a permanent log file
+- Responsive UI with a working Stop button; the worker thread is shut down cleanly on close
+- Handles timeouts, unreachable hosts, bad SSL, duplicate entries and empty input without crashing
 
 ## Requirements
 
@@ -68,48 +74,52 @@ pip install PyQt5
 > python -m pip install PyQt5 --break-system-packages
 > ```
 
-Everything else (`hashlib`, `os`, `re`) is in the Python standard library.
+Networking uses `urllib` from the standard library, so **PyQt5 is the only dependency**.
 
 ## How to run
 
 ```bash
-python duplicate_file_finder.py
+python web_health_monitor.py
 ```
 
-Then: **Browse** for a folder → (optionally add regex filters) → **Scan for Duplicates** → review the groups → tick the copies to remove → **Delete Ticked Files**.
+Then: type a website → **Add** → set the interval → **Start Monitoring** (or **Check Once Now** for a single round).
 
 ## Screenshots
 
-**Scan results — six duplicate groups found across different file types, showing sizes, locations and the total wasted space:**
+**Monitoring several sites — healthy sites in green with their latency and uptime, a failed site in red, and every check recorded in the activity log:**
 
-![Scan results](screenshot1.png)
+![Monitoring view](screenshot1.png)
 
-**Safe deletion — the confirmation dialog makes clear that one copy in each group is always kept:**
+**An alert is raised the moment a site goes down, with the reason shown and logged:**
 
-![Delete confirmation](screenshot2.png)
+![Down alert](screenshot2.png)
+
+> Note the evidence of concurrency in these screenshots: every site in a round is logged at the *same second*, and the status bar reports the whole round finishing in **1.4 s** even though the slowest single site took **1369 ms**. The round takes about as long as the slowest site, not the sum of them all.
 
 ## Testing
 
-The detection logic was tested against a folder with known duplicates, confirming:
+The application was tested against a local test server with deliberately healthy, failing and slow endpoints, confirming:
 
-- Identical files are grouped correctly (including across sub-folders)
-- Files of the **same size but different content** are correctly *not* grouped
-- Include and exclude regex filters select the right files
-- Non-recursive mode ignores sub-folders
-- Hashing gives the same result regardless of chunk size (large-file safety)
-- Wasted-space totals are accurate
-- Empty folders and invalid regex patterns are handled without crashing
-- Deleting the ticked copies leaves exactly one original per group
+- Healthy sites (HTTP 200) are reported **UP**
+- Failing sites (HTTP 500) are reported **DOWN** with the error recorded
+- Unreachable hosts are handled gracefully instead of crashing
+- Slow responses (> 1.5 s) are correctly flagged **SLOW**
+- The thread pool gives a genuine **4.5× speed-up** over sequential checking
+- Uptime maths is accurate (3 of 4 successful checks → 75%)
+- Alerts fire **only** on the up→down transition, not repeatedly while a site stays down
+- The consecutive-failure counter resets on recovery
+- All three log levels (INFO / WARNING / ERROR) are written to the log file
+- The GUI populates the table with correct states and colours, starts and stops the worker thread cleanly, and rejects duplicate URLs
 
 ## How I used AI
 
-I used AI (Claude) as a learning and debugging aid — for example to understand why a two-pass size-then-hash approach is much faster than comparing every file, and how to run a long scan on a background thread so a PyQt5 window doesn't freeze. I reviewed and tested the logic myself; the design decisions and final code are my own.
+I used AI (Claude) as a learning and debugging aid — for example to understand why threads help for I/O-bound network calls despite the GIL, and how to run a monitoring loop on a background thread so a PyQt5 window stays responsive. I reviewed and tested the logic myself; the design decisions and final code are my own.
 
 ## Project structure
 
 ```
-duplicate-file-finder/
-├── duplicate_file_finder.py   # main application (core logic + PyQt5 GUI)
+web-health-monitor/
+├── web_health_monitor.py   # main application (logging, core logic, worker thread, GUI)
 ├── README.md
 ├── screenshot1.png
 └── screenshot2.png
