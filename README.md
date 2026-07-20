@@ -2,8 +2,6 @@
 
 A Python desktop application that monitors multiple websites **concurrently using threads**, records uptime and latency through the **logging** module, and raises an alert the moment a site goes down — built with a **PyQt5** GUI.
 
-- **Intern:** Waleed Ahmad Khan
-- **Reg No:** Mtech-PY26017
 - **Concepts:** Threading + Logging
 - **GUI Toolkit:** PyQt5
 - **Level:** Advanced
